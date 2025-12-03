@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -69,15 +70,103 @@ public class EventController {
     }
 
     // Get event by id
+//    @GetMapping("/{id}")
+//    public ResponseEntity<Event> getEvent(@PathVariable Long id){
+//        try {
+//            Event e = eventService.getEvent(id);
+//            return ResponseEntity.ok(e);
+//        } catch (IllegalArgumentException ex){
+//            return ResponseEntity.notFound().build();
+//        }
+//    }
     @GetMapping("/{id}")
-    public ResponseEntity<Event> getEvent(@PathVariable Long id){
+    public ResponseEntity<?> getEvent(@PathVariable Long id){
         try {
-            Event e = eventService.getEvent(id);
-            return ResponseEntity.ok(e);
+            Event e = eventService.getEvent(id); // uses fetch-join in service
+
+            var splits = e.getSplits().stream().map(d -> {
+                Map<String,Object> m = new HashMap<>();
+                m.put("id", d.getId());
+                m.put("debAmount", d.getDebAmount());
+                m.put("amountPaid", d.getAmountPaid());
+                m.put("remaining", d.getRemaining());
+                m.put("included", d.isIncluded());
+                m.put("settled", d.isSettled());
+                m.put("paidAt", d.getPaidAt());
+                // user info (may be null)
+                if (d.getUser() != null) {
+                    m.put("userId", d.getUser().getId());
+                    m.put("username", d.getUser().getUsername());
+                } else {
+                    m.put("userId", null);
+                    m.put("username", null);
+                }
+                return m;
+            }).toList();
+
+            Map<String,Object> resp = new HashMap<>();
+            resp.put("id", e.getId());
+            resp.put("title", e.getTitle());
+            resp.put("total", e.getTotal());
+            resp.put("cancelled", e.isCancelled());
+            resp.put("createdAt", e.getCreatedAt());
+            resp.put("creatorId", e.getCreator() != null ? e.getCreator().getId() : null);
+            resp.put("creatorUsername", e.getCreator() != null ? e.getCreator().getUsername() : null);
+            resp.put("splits", splits);
+
+            return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException ex){
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "event not found"));
+        } catch (Exception ex) {
+            // log for diagnosis
+            ex.printStackTrace();
+            Map<String,Object> err = new HashMap<>();
+            err.put("error", "internal_error");
+            err.put("message", ex.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(err);
         }
     }
+
+//    @GetMapping("/{id}")
+//    public ResponseEntity<?> getEvent(@PathVariable Long id){
+//        try {
+//            Event e = eventService.getEvent(id); // should fetch splits + users
+//
+//            var splits = e.getSplits().stream().map(d -> Map.of(
+//                    "id", d.getId(),
+//                    "debAmount", d.getDebAmount(),
+//                    "amountPaid", d.getAmountPaid(),
+//                    "remaining", d.getRemaining(),
+//                    "included", d.isIncluded(),
+//                    "settled", d.isSettled(),
+//                    "paidAt", d.getPaidAt(),
+//                    "userId", d.getUser() != null ? d.getUser().getId() : null,
+//                    "username", d.getUser() != null ? d.getUser().getUsername() : null
+//            )).toList();
+//
+//            Map<String,Object> resp = Map.of(
+//                    "id", e.getId(),
+//                    "title", e.getTitle(),
+//                    "total", e.getTotal(),
+//                    "cancelled", e.isCancelled(),
+//                    "createdAt", e.getCreatedAt(),
+//                    "creatorId", e.getCreator() != null ? e.getCreator().getId() : null,
+//                    "creatorUsername", e.getCreator() != null ? e.getCreator().getUsername() : null,
+//                    "splits", splits
+//            );
+//
+//            return ResponseEntity.ok(resp);
+//        } catch (IllegalArgumentException ex){
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "event not found"));
+//        } catch (Exception ex) {
+//            // log stacktrace so you can debug server-side
+//            ex.printStackTrace();
+//            // return useful JSON for frontend (and avoid exposing sensitive info)
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+//                    .body(Map.of("error", "internal_error", "message", ex.getMessage()));
+//        }
+//    }
+//
 
     // List events
     @GetMapping
@@ -118,19 +207,26 @@ public class EventController {
         }
 
         var list = e.getSplits().stream()
-                .map(d -> Map.of(
-                        "debitorId", d.getId(),
-                        "userId", d.getUser().getId(),
-                        "username", d.getUser().getUsername(),
-                        "debAmount", d.getDebAmount(),
-                        "paid", d.getAmountPaid(),
-                        "remaining", d.getRemaining(),
-                        "included", d.isIncluded()
-                ))
+                .map(d -> {
+                    var user = d.getUser();
+                    Long userId = user != null ? user.getId() : null;
+                    String username = user != null ? user.getUsername() : null;
+
+                    return Map.of(
+                            "debitorId", d.getId(),
+                            "userId", userId,
+                            "username", username,
+                            "debAmount", d.getDebAmount(),
+                            "paid", d.getAmountPaid(),
+                            "remaining", d.getRemaining(),
+                            "included", d.isIncluded()
+                    );
+                })
                 .toList();
 
         return ResponseEntity.ok(list);
     }
+
 
 
     @PutMapping("/{id}")

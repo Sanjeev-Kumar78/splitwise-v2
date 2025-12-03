@@ -102,12 +102,17 @@ public class EventService {
 
 
 
-
-
     @Transactional(readOnly = true)
     public Event getEvent(Long id){
-        return eventRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Event not found"));
+        // prefer the fetch-join method to ensure splits.user and creator are loaded
+        return eventRepo.findByIdWithSplitsAndUsers(id)
+                .orElseThrow(() -> new IllegalArgumentException("Event not found"));
     }
+
+//    @Transactional(readOnly = true)
+//    public Event getEvent(Long id){
+//        return eventRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Event not found"));
+//    }
 
     @Transactional(readOnly = true)
     public List<Event> getAllEvents(){
@@ -172,5 +177,7 @@ public class EventService {
         // persist event (will cascade to debitors if mapped)
         return eventRepo.save(existing);
     }
+
+
 
 }

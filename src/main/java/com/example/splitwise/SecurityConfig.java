@@ -42,7 +42,8 @@ public class SecurityConfig {
                                 "/error",
                                 "/public/**",
                                 "/api/auth/**",
-                                "/api/users/ping"
+                                "/api/users/ping",
+                                "/api/users/search"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

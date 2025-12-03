@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,29 +105,55 @@ public class UserController {
     }
 
 //      this will show after user login via oauth .... leads his details
-    @GetMapping("/me")
-    public ResponseEntity<?> me(@AuthenticationPrincipal OAuth2User principal) {
-        if (principal == null) return ResponseEntity.status(401).build();
+@GetMapping("/me")
+public ResponseEntity<?> me(@AuthenticationPrincipal OAuth2User principal) {
+    if (principal == null) return ResponseEntity.status(401).build();
 
-        String email = principal.getAttribute("email");
-        if (email == null) return ResponseEntity.status(400).body("No email in principal");
+    String email = principal.getAttribute("email");
+    if (email == null) return ResponseEntity.status(400).body("No email in principal");
 
-        User u = userService.findByEmail(email);
-        if (u == null) return ResponseEntity.status(404).body("User not found");
+    User u = userService.getUserWithCollectionsByEmail(email);
+    if (u == null) return ResponseEntity.status(404).body("User not found");
 
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("id", u.getId());
-        resp.put("email", u.getEmail());
-        resp.put("username", u.getUsername());
-        resp.put("total", u.getTotal());
-        resp.put("emailVerified", u.isEmailVerified());
+    BigDecimal youOwe = userService.computeYouOwe(u);
+    BigDecimal owedToYou = userService.computeOwedToYou(u);
+    BigDecimal total = u.getTotal() == null ? BigDecimal.ZERO : u.getTotal();
 
-        // optional later:
-        // resp.put("debitorCount", u.getDebitors().size());
-        // resp.put("eventCount", u.getEvents().size());
+    var debitors = u.getDebitors().stream()
+            .map(d -> Map.of(
+                    "id", d.getId(),
+                    "eventId", d.getEvent() != null ? d.getEvent().getId() : null,
+                    "userId", d.getUser() != null ? d.getUser().getId() : null,
+                    "debAmount", d.getDebAmount(),
+                    "amountPaid", d.getAmountPaid(),
+                    "remaining", d.getDebAmount().subtract(d.getAmountPaid()),
+                    "included", d.isIncluded(),
+                    "settled", d.isSettled()
+            ))
+            .toList();
 
-        return ResponseEntity.ok(resp);
-    }
+    var events = u.getEvents().stream()
+            .map(e -> Map.of(
+                    "id", e.getId(),
+                    "title", e.getTitle(),
+                    "total", e.getTotal(),
+                    "cancelled", e.isCancelled()
+            ))
+            .toList();
+
+    Map<String, Object> resp = new HashMap<>();
+    resp.put("id", u.getId());
+    resp.put("email", u.getEmail());
+    resp.put("username", u.getUsername());
+    resp.put("total", total);
+    resp.put("emailVerified", u.isEmailVerified());
+    resp.put("youOwe", youOwe);
+    resp.put("owedToYou", owedToYou);
+    resp.put("debitors", debitors);
+    resp.put("events", events);
+
+    return ResponseEntity.ok(resp);
+}
 
     @PostMapping("/set-username")
     public ResponseEntity<?> setUsername(
@@ -152,12 +179,34 @@ public class UserController {
     }
 
     // GET /api/users/search?username=...
+//    @GetMapping("/search")
+//    public ResponseEntity<?> searchByUsername(@RequestParam String username) {
+//        if (username == null || username.trim().isEmpty()) {
+//            return ResponseEntity.badRequest().body(Map.of("error", "username required"));
+//        }
+//        var opt = userService.findByUsernameOptional(username.trim());
+//        if (opt.isEmpty()) {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "user not found"));
+//        }
+//        User u = opt.get();
+//        Map<String,Object> resp = Map.of(
+//                "id", u.getId(),
+//                "username", u.getUsername(),
+//                "total", u.getTotal()
+//        );
+//        return ResponseEntity.ok(resp);
+//    }
+
+
+
+
     @GetMapping("/search")
     public ResponseEntity<?> searchByUsername(@RequestParam String username) {
         if (username == null || username.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "username required"));
         }
-        var opt = userService.findByUsernameOptional(username.trim());
+
+        var opt = userService.findByUsernameIgnoreCaseOptional(username.trim());
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "user not found"));
         }
@@ -169,8 +218,6 @@ public class UserController {
         );
         return ResponseEntity.ok(resp);
     }
-
-
 
 
 

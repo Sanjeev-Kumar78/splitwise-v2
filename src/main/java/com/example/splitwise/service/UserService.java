@@ -1,10 +1,13 @@
 package com.example.splitwise.service;
 
 import com.example.splitwise.model.User;
+import com.example.splitwise.repo.DebitorRepo;
 import com.example.splitwise.repo.UserRepo;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,9 +15,12 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepo userRepo;
+    @Autowired
+    private final DebitorRepo debitorRepo;
 
-    public UserService(UserRepo userRepo){
+    public UserService(UserRepo userRepo, DebitorRepo debitorRepo){
         this.userRepo = userRepo;
+        this.debitorRepo = debitorRepo;
     }
 
     @Transactional
@@ -91,6 +97,59 @@ public class UserService {
     }
     public Optional<User> findByUsernameOptional(String username) {
         return userRepo.findByUsername(username);
+    }
+
+    public Optional<User> findByUsernameIgnoreCaseOptional(String username) {
+        return userRepo.findByUsernameIgnoreCase(username);
+    }
+    @Transactional(readOnly = true)
+    public Optional<User> getUserWithCollections(Long id) {
+        Optional<User> opt = userRepo.findById(id);
+        opt.ifPresent(u -> {
+            // touch collections to initialize
+            u.getDebitors().size();
+            u.getEvents().size();
+            // For each event, ensure splits are loaded
+            u.getEvents().forEach(e -> e.getSplits().size());
+        });
+        return opt;
+    }
+    @Transactional(readOnly = true)
+    public User getUserWithCollectionsByEmail(String email) {
+        var opt = userRepo.findByEmail(email);
+        if (opt.isEmpty()) return null;
+        User u = opt.get();
+        // touch collections to load them
+        u.getDebitors().size();
+        u.getEvents().size();
+        u.getEvents().forEach(e -> e.getSplits().size());
+        return u;
+    }
+    public BigDecimal computeYouOwe(User u) {
+        if (u == null) return BigDecimal.ZERO;
+        return u.getDebitors().stream()
+//                .filter(Debitor::isIncluded) // optional: only included
+                .filter(d -> !d.isSettled())
+                .map(d -> {
+                    BigDecimal deb = d.getDebAmount() == null ? BigDecimal.ZERO : d.getDebAmount();
+                    BigDecimal paid = d.getAmountPaid() == null ? BigDecimal.ZERO : d.getAmountPaid();
+                    return deb.subtract(paid);
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal computeOwedToYou(User u) {
+        if (u == null) return BigDecimal.ZERO;
+        return u.getEvents().stream()
+                .filter(e -> !Boolean.TRUE.equals(e.isCancelled()))
+                .map(e -> {
+                    BigDecimal total = e.getTotal() == null ? BigDecimal.ZERO : e.getTotal();
+                    BigDecimal paid = e.getSplits().stream()
+                            .map(s -> s.getAmountPaid() == null ? BigDecimal.ZERO : s.getAmountPaid())
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return total.subtract(paid);
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
 
