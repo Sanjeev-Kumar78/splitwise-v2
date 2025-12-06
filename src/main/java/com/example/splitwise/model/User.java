@@ -25,6 +25,10 @@ public class User {
     @Column(name = "email")
     private String email;
 
+    @Column(nullable = false)
+    private String password;
+
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL,
             orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference(value = "user-debitors")
@@ -55,6 +59,16 @@ public class User {
         debitors.remove(d);
         d.setUser(null);
     }
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+
+
     public void addEvent(Event e){
         events.add(e);
         e.setCreator(this);

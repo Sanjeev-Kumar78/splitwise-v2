@@ -4,12 +4,11 @@ import com.example.splitwise.model.User;
 import com.example.splitwise.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,19 +18,44 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
-    public UserController(UserService userService){ this.userService = userService; }
+    private final PasswordEncoder passwordEncoder;
 
-    // Create user
+    public UserController(UserService userService, PasswordEncoder passwordEncoder){
+        this.userService = userService;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    // health
     @GetMapping("/ping")
     public ResponseEntity<String> ping(){ return ResponseEntity.ok("everything okey..."); }
 
+    // Create user (encodes password if provided)
     @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody User u){
+    public ResponseEntity<?> createUser(@RequestBody User u){
+        if (u.getEmail() == null || u.getEmail().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error","email_required"));
+        }
+        if (userService.findByEmail(u.getEmail()) != null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error","email_exists"));
+        }
+
+        // set encoded password if provided (otherwise leave null)
+        if (u.getPassword() != null && !u.getPassword().isBlank()) {
+            u.setPassword(passwordEncoder.encode(u.getPassword()));
+        }
+
         User saved = userService.createUser(u);
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        // do not return password field in response
+        Map<String,Object> resp = new HashMap<>();
+        resp.put("id", saved.getId());
+        resp.put("email", saved.getEmail());
+        resp.put("username", saved.getUsername());
+        resp.put("total", saved.getTotal());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
-    // Get one user
+    // Get one user (minimal view)
     @GetMapping("/{id}")
     public ResponseEntity<?> getUser(@PathVariable Long id){
         var users = userService.getAllUsers();
@@ -46,10 +70,10 @@ public class UserController {
             }
         }
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error","user not found"));
     }
 
-    // List users
+    // List users (minimal)
     @GetMapping
     public ResponseEntity<List<Map<String,Object>>> getAllUsers(){
         var users = userService.getAllUsers();
@@ -63,23 +87,22 @@ public class UserController {
         return ResponseEntity.ok(list);
     }
 
-
-    // Update user (full replace)
+    // Update user (partial safe update)
     @PutMapping("/{id}")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody User payload){
-        // cheap existence check — avoids initializing collections
         if (!userService.existsById(id)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error","user not found"));
         }
 
-        // now load the entity (this will initialize collections inside service.getUser)
         return userService.getUser(id).map(existing -> {
-            // only update allowed simple fields (defensive)
             if (payload.getUsername() != null) existing.setUsername(payload.getUsername());
             if (payload.getTotal() != null) existing.setTotal(payload.getTotal());
+            // if password is provided here, encode it (optional: allow admin to change)
+            if (payload.getPassword() != null && !payload.getPassword().isBlank()) {
+                existing.setPassword(passwordEncoder.encode(payload.getPassword()));
+            }
             User updated = userService.updateUser(existing);
 
-            // return minimal JSON to avoid serializing lazy collections
             Map<String,Object> resp = new HashMap<>();
             resp.put("id", updated.getId());
             resp.put("username", updated.getUsername());
@@ -87,7 +110,6 @@ public class UserController {
             return ResponseEntity.ok(resp);
         }).orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error","user not found")));
     }
-
 
     // Delete user
     @DeleteMapping("/{id}")
@@ -104,65 +126,63 @@ public class UserController {
         }
     }
 
-//      this will show after user login via oauth .... leads his details
-@GetMapping("/me")
-public ResponseEntity<?> me(@AuthenticationPrincipal OAuth2User principal) {
-    if (principal == null) return ResponseEntity.status(401).build();
+    // Authenticated user's profile (works with JWT; Principal.getName() is email)
+    @GetMapping("/me")
+    public ResponseEntity<?> me(Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
 
-    String email = principal.getAttribute("email");
-    if (email == null) return ResponseEntity.status(400).body("No email in principal");
+        String email = principal.getName();
+        if (email == null) return ResponseEntity.status(400).body(Map.of("error","no_email_in_principal"));
 
-    User u = userService.getUserWithCollectionsByEmail(email);
-    if (u == null) return ResponseEntity.status(404).body("User not found");
+        User u = userService.getUserWithCollectionsByEmail(email);
+        if (u == null) return ResponseEntity.status(404).body(Map.of("error","user not found"));
 
-    BigDecimal youOwe = userService.computeYouOwe(u);
-    BigDecimal owedToYou = userService.computeOwedToYou(u);
-    BigDecimal total = u.getTotal() == null ? BigDecimal.ZERO : u.getTotal();
+        BigDecimal youOwe = userService.computeYouOwe(u);
+        BigDecimal owedToYou = userService.computeOwedToYou(u);
+        BigDecimal total = u.getTotal() == null ? BigDecimal.ZERO : u.getTotal();
 
-    var debitors = u.getDebitors().stream()
-            .map(d -> Map.of(
-                    "id", d.getId(),
-                    "eventId", d.getEvent() != null ? d.getEvent().getId() : null,
-                    "userId", d.getUser() != null ? d.getUser().getId() : null,
-                    "debAmount", d.getDebAmount(),
-                    "amountPaid", d.getAmountPaid(),
-                    "remaining", d.getDebAmount().subtract(d.getAmountPaid()),
-                    "included", d.isIncluded(),
-                    "settled", d.isSettled()
-            ))
-            .toList();
+        var debitors = u.getDebitors().stream()
+                .map(d -> Map.of(
+                        "id", d.getId(),
+                        "eventId", d.getEvent() != null ? d.getEvent().getId() : null,
+                        "userId", d.getUser() != null ? d.getUser().getId() : null,
+                        "debAmount", d.getDebAmount(),
+                        "amountPaid", d.getAmountPaid(),
+                        "remaining", d.getDebAmount().subtract(d.getAmountPaid()),
+                        "included", d.isIncluded(),
+                        "settled", d.isSettled()
+                ))
+                .toList();
 
-    var events = u.getEvents().stream()
-            .map(e -> Map.of(
-                    "id", e.getId(),
-                    "title", e.getTitle(),
-                    "total", e.getTotal(),
-                    "cancelled", e.isCancelled()
-            ))
-            .toList();
+        var events = u.getEvents().stream()
+                .map(e -> Map.of(
+                        "id", e.getId(),
+                        "title", e.getTitle(),
+                        "total", e.getTotal(),
+                        "cancelled", e.isCancelled()
+                ))
+                .toList();
 
-    Map<String, Object> resp = new HashMap<>();
-    resp.put("id", u.getId());
-    resp.put("email", u.getEmail());
-    resp.put("username", u.getUsername());
-    resp.put("total", total);
-    resp.put("emailVerified", u.isEmailVerified());
-    resp.put("youOwe", youOwe);
-    resp.put("owedToYou", owedToYou);
-    resp.put("debitors", debitors);
-    resp.put("events", events);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("id", u.getId());
+        resp.put("email", u.getEmail());
+        resp.put("username", u.getUsername());
+        resp.put("total", total);
+        resp.put("emailVerified", u.isEmailVerified());
+        resp.put("youOwe", youOwe);
+        resp.put("owedToYou", owedToYou);
+        resp.put("debitors", debitors);
+        resp.put("events", events);
 
-    return ResponseEntity.ok(resp);
-}
+        return ResponseEntity.ok(resp);
+    }
 
+    // Set username for authenticated user
     @PostMapping("/set-username")
-    public ResponseEntity<?> setUsername(
-            @AuthenticationPrincipal OAuth2User principal,
-            @RequestBody Map<String,String> body
-    ) {
-        if (principal == null) return ResponseEntity.status(401).body("Not authenticated");
+    public ResponseEntity<?> setUsername(Principal principal, @RequestBody Map<String,String> body) {
+        if (principal == null) return ResponseEntity.status(401).body(Map.of("error","not_authenticated"));
 
-        String email = principal.getAttribute("email");
+        String email = principal.getName();
         String username = body.get("username");
 
         try {
@@ -172,34 +192,48 @@ public ResponseEntity<?> me(@AuthenticationPrincipal OAuth2User principal) {
                     "username", updated.getUsername()
             ));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(409).body(e.getMessage());
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // GET /api/users/search?username=...
-//    @GetMapping("/search")
-//    public ResponseEntity<?> searchByUsername(@RequestParam String username) {
-//        if (username == null || username.trim().isEmpty()) {
-//            return ResponseEntity.badRequest().body(Map.of("error", "username required"));
-//        }
-//        var opt = userService.findByUsernameOptional(username.trim());
-//        if (opt.isEmpty()) {
-//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "user not found"));
-//        }
-//        User u = opt.get();
-//        Map<String,Object> resp = Map.of(
-//                "id", u.getId(),
-//                "username", u.getUsername(),
-//                "total", u.getTotal()
-//        );
-//        return ResponseEntity.ok(resp);
-//    }
+    // Change password for authenticated user
+    @PostMapping("/set-password")
+    public ResponseEntity<?> setPassword(Principal principal, @RequestBody Map<String,String> body) {
+        if (principal == null) return ResponseEntity.status(401).body(Map.of("error","not_authenticated"));
 
+        String email = principal.getName();
+        String oldPw = body.get("oldPassword");
+        String newPw = body.get("newPassword");
 
+        if (newPw == null || newPw.length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error","new_password_too_short"));
+        }
 
+        User u = userService.findByEmail(email);
+        if (u == null) return ResponseEntity.status(404).body(Map.of("error","user not found"));
 
+        // if user had no password (OAuth user converted), allow set when oldPw is absent
+        if (u.getPassword() == null || u.getPassword().isBlank()) {
+            // set new password directly
+            u.setPassword(passwordEncoder.encode(newPw));
+            userService.updateUser(u);
+            return ResponseEntity.ok(Map.of("status","password_set"));
+        }
+
+        // verify old password
+        if (oldPw == null || !passwordEncoder.matches(oldPw, u.getPassword())) {
+            return ResponseEntity.status(401).body(Map.of("error","invalid_old_password"));
+        }
+
+        // all good — update
+        u.setPassword(passwordEncoder.encode(newPw));
+        userService.updateUser(u);
+        return ResponseEntity.ok(Map.of("status","password_changed"));
+    }
+
+    // Search by username (case-insensitive)
     @GetMapping("/search")
     public ResponseEntity<?> searchByUsername(@RequestParam String username) {
         if (username == null || username.trim().isEmpty()) {
@@ -218,8 +252,4 @@ public ResponseEntity<?> me(@AuthenticationPrincipal OAuth2User principal) {
         );
         return ResponseEntity.ok(resp);
     }
-
-
-
-
 }
