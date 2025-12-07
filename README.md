@@ -63,6 +63,7 @@ JDK 21 or higher is required.
 ## API Documentation
 
 API documentation is available via Swagger UI at:
+`http://localhost:8080/swagger-ui/index.html`
 
 ### Routes
 
