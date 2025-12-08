@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class EventService {
@@ -57,6 +58,13 @@ public class EventService {
         Debitor ready = addDebitorLogic(eventId, d);
         return debitorRepo.save(ready);
     }
+
+    @Transactional(readOnly = true)
+    public List<Event> getEventsForUser(Long userId) {
+        return eventRepo.findEventsByUser(userId);
+    }
+
+
 
     @Transactional
     public void deleteDebitor(Long debitorId) {

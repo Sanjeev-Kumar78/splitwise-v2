@@ -137,6 +137,9 @@ public class UserService {
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
+    public Optional<User> getByEmail(String email) {
+        return userRepo.findByEmail(email);
+    }
 
     public BigDecimal computeOwedToYou(User u) {
         if (u == null) return BigDecimal.ZERO;

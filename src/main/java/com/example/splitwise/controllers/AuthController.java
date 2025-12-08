@@ -163,10 +163,10 @@ public class AuthController {
     @Schema(description = "User login request")
     public static class LoginRequest {
 
-        @Schema(description = "User email address", example = "john.doe@example.com", required = true)
+        @Schema(description = "User email address", example = "john.doe@example.com", requiredMode = Schema.RequiredMode.REQUIRED)
         private String email;
 
-        @Schema(description = "User password", example = "password123", required = true)
+        @Schema(description = "User password", example = "password123", requiredMode = Schema.RequiredMode.REQUIRED)
         private String password;
 
         // Default constructor for Jackson

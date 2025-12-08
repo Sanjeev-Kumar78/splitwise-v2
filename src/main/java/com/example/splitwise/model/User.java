@@ -13,6 +13,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(unique = true)
     private String username;
 
     // materialized balance (optional). Use BigDecimal for money.
@@ -24,6 +25,13 @@ public class User {
 
     @Column(name = "email")
     private String email;
+
+    @Column(name = "verificationToken")
+    private String verificationToken;
+
+    @Column(name = "verification_expires_at")
+
+    private java.time.LocalDateTime verificationExpiresAt;
 
     @Column(nullable = false)
     private String password;
@@ -103,5 +111,22 @@ public class User {
     public void setTotal(BigDecimal total){ this.total = total; }
     public List<Debitor> getDebitors(){ return debitors; }
     public List<Event> getEvents(){ return events; }
+
+    public String getVerificationToken() {
+        return verificationToken;
+    }
+
+    public void setVerificationToken(String verificationToken) {
+        this.verificationToken = verificationToken;
+    }
+
+    public java.time.LocalDateTime getVerificationExpiresAt() {
+        return verificationExpiresAt;
+    }
+
+    public void setVerificationExpiresAt(java.time.LocalDateTime verificationExpiresAt) {
+        this.verificationExpiresAt = verificationExpiresAt;
+    }
+
 
 }
