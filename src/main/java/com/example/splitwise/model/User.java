@@ -1,6 +1,7 @@
 package com.example.splitwise.model;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ public class User {
     @Column(name = "email")
     private String email;
 
+    @JsonIgnore
     @Column(name = "verificationToken")
     private String verificationToken;
 
@@ -33,6 +35,7 @@ public class User {
 
     private java.time.LocalDateTime verificationExpiresAt;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String password;
 

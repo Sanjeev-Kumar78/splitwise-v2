@@ -44,18 +44,31 @@ public class PaymentController {
         @ApiResponse(responseCode = "500", description = "Payment failed (optimistic lock or server error)")
     })
     @PostMapping("/pay")
-    public ResponseEntity<Transaction> pay(@RequestBody PayDto dto) {
+    public ResponseEntity<?> pay(@RequestBody PayDto dto) {
         if (dto.debitorId == null || dto.payerUserId == null || dto.amount == null) {
             return ResponseEntity.badRequest().build();
         }
         try {
             Transaction tx = paymentService.payDebitor(dto.debitorId, dto.payerUserId, dto.amount);
-            return ResponseEntity.status(HttpStatus.CREATED).body(tx);
+            
+            // Return safe DTO instead of full entity
+            var response = java.util.Map.of(
+                "id", tx.getId(),
+                "amount", tx.getAmount(),
+                "fromUserId", tx.getFromUser().getId(),
+                "toUserId", tx.getToUser().getId(),
+                "eventId", tx.getEventId() != null ? tx.getEventId() : 0L,
+                "timestamp", tx.getTs(),
+                "note", tx.getNote() != null ? tx.getNote() : ""
+            );
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(java.util.Map.of("error", ex.getMessage()));
         } catch (Exception ex) {
             // generic fallback (e.g., optimistic lock)
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(java.util.Map.of("error", "payment_failed", "message", ex.getMessage()));
         }
     }
 }

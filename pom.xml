@@ -61,32 +61,18 @@
 <!--			<version>42.6.0</version> &lt;!&ndash; optional explicit version &ndash;&gt;-->
 <!--		</dependency>-->
 
-		<!-- JSON Web Token (JWT) dependencies -->
-
-		<!-- JSON Web Token (JJWT) - single consistent set -->
+		<!-- JSON Web Token (JWT) - Nimbus JOSE+JWT -->
 		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-api</artifactId>
-			<version>0.11.5</version>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-impl</artifactId>
-			<version>0.11.5</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-jackson</artifactId>
-			<version>0.11.5</version>
-			<scope>runtime</scope>
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+			<version>10.6</version>
 		</dependency>
 
 		<!-- SpringDoc OpenAPI (Swagger) -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>2.6.0</version>
+			<version>3.0.0</version>
 		</dependency>
 		
 		<!-- Hibernate Validator for Jakarta Validation -->
