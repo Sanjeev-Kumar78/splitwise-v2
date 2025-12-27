@@ -18,6 +18,8 @@ SplitWise is a web application designed to help users manage and split expenses 
 
 ## Getting Started
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Sanjeev-Kumar78/splitwise-v2)
+
 JDK 21 or higher is required.
 
 1. Clone the repository:
