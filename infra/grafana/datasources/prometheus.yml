@@ -3,7 +3,8 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://prometheus:9090/prometheus
+    # Use internal service base URL (no external route prefix) so Grafana can reach Prometheus directly
+    url: http://prometheus:9090/
     isDefault: true
     editable: false
     jsonData:
