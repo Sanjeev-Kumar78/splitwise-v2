@@ -81,6 +81,7 @@ docker compose logs -f backend
 - Backend API: `http://localhost/api`
 - Swagger UI: `http://localhost/swagger-ui/index.html`
 - Grafana: `http://localhost/grafana` (admin/admin)
+- GRAFANA DASHBOARDS: ID 19004 (Spring Boot 3.x)
 - Prometheus: `http://localhost/prometheus`
 
 #### 4. Option B: Using JDK and Local PostgreSQL
