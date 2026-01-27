@@ -10,12 +10,15 @@ permissions:
   contents: read
 
 env:
-  ECR_REPO: splitwisev2
-  IMAGE_TAG: latest
+  ECR_REPO: ${{vars.ECR_REPO}}
+  IMAGE_TAG: ${{vars.IMAGE_TAG}}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    outputs:
+      public-dns: ${{ steps.deploy.outputs.public_dns }}
 
     steps:
       # --------------------------------------------------
@@ -31,7 +34,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@main
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Additional steps
         run: |
           # Your commands that require AWS credentials
@@ -48,7 +51,7 @@ jobs:
       # --------------------------------------------------
       - name: Build and Push Docker image
         run: |
-          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
 
           docker build -t $IMAGE_URI .
           docker push $IMAGE_URI
@@ -59,6 +62,7 @@ jobs:
       # 5. Deploy to EC2 via SSM
       # --------------------------------------------------
       - name: Deploy to EC2 using SSM
+        id: deploy
         run: |
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
@@ -96,17 +100,37 @@ jobs:
               "EOF"
             ]'
 
-      # --------------------------------------------------
-      # 6. Show deployment URL
-      # --------------------------------------------------
-      - name: Deployment successful
-        run: |
-          echo "=========================================="
-          echo "🚀 SplitwiseV2 Deployed Successfully!"
-          echo "🌐 URL: http://$(aws ec2 describe-instances \
+          PUBLIC_DNS=$(aws ec2 describe-instances \
             --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --query 'Reservations[0].Instances[0].PublicDnsName' \
-            --output text)"
-          echo "📊 Grafana: http://<EC2-PUBLIC-DNS>/grafana"
-          echo "📈 Prometheus: http://<EC2-PUBLIC-DNS>/prometheus"
+            --output text)
+
+          echo "public_dns=$PUBLIC_DNS" >> $GITHUB_OUTPUT
+          echo "Deployment completed. Public DNS: $PUBLIC_DNS"
+
+  update-repo-url:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy
+    permissions:
+      contents: write
+
+    steps:
+      # --------------------------------------------------
+      # 6. Update repository URL
+      # --------------------------------------------------
+      - name: Update repository homepage URL
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          PUBLIC_DNS="${{ needs.build-and-deploy.outputs.public-dns }}"
+          APP_URL="https://$PUBLIC_DNS"
+
+          echo "=========================================="
+          echo "Updating repository homepage to: $APP_URL"
+          gh repo edit ${{ github.repository }} --homepage "$APP_URL"
+
+          echo "🚀 SplitwiseV2 Deployed Successfully!"
+          echo "Application URL: $APP_URL"
+          echo "Grafana: $APP_URL/grafana"
+          echo "Prometheus: $APP_URL/prometheus"
           echo "=========================================="

@@ -14,6 +14,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -40,11 +42,26 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtService, userDetailsService);
 
+        // Configure CSRF token handler for SPA compatibility
+        CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
+        requestHandler.setCsrfRequestAttributeName("_csrf");
+
         http
                 // CORS must be enabled before CSRF/authorize configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // Disable CSRF for stateless JWT REST API
-                .csrf(csrf -> csrf.disable())
+                // Enable CSRF with cookie-based tokens for SPA compatibility
+                .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(requestHandler)
+                .ignoringRequestMatchers(
+                        "/api/auth/**", // Login/register endpoints
+                        "/h2-console/**", // H2 console (dev only)
+                        "/actuator/**", // Monitoring endpoints
+                        "/v3/api-docs/**", // OpenAPI docs
+                        "/swagger-ui/**", // Swagger UI
+                        "/swagger-ui.html" // Swagger UI
+                )
+                )
                 // Authorize requests using lambda style
                 .authorizeHttpRequests(auth -> auth
                 // public endpoints
@@ -98,7 +115,7 @@ public class SecurityConfig {
         ));
         conf.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         conf.setAllowedHeaders(List.of("*")); // Allow all headers for Swagger compatibility
-        conf.setExposedHeaders(List.of("Authorization", "Content-Type")); // headers that frontend can read
+        conf.setExposedHeaders(List.of("Authorization", "Content-Type", "X-XSRF-TOKEN")); // headers that frontend can read
         conf.setAllowCredentials(true); // required for allowedOriginPatterns
         conf.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
