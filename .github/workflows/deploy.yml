@@ -28,10 +28,14 @@ jobs:
       # 2. Configure AWS credentials (OIDC)
       # --------------------------------------------------
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@main
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+      - name: Additional steps
+        run: |
+          # Your commands that require AWS credentials
+          aws sts get-caller-identity
 
       # --------------------------------------------------
       # 3. Login to Amazon ECR
