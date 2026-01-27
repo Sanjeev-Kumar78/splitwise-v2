@@ -1,0 +1,108 @@
+name: SplitwiseV2 CI/CD (ECR → EC2 via SSM)
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ECR_REPO: splitwisev2
+  IMAGE_TAG: latest
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # --------------------------------------------------
+      # 1. Checkout source
+      # --------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # --------------------------------------------------
+      # 2. Configure AWS credentials (OIDC)
+      # --------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # --------------------------------------------------
+      # 3. Login to Amazon ECR
+      # --------------------------------------------------
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # --------------------------------------------------
+      # 4. Build & Push Docker Image
+      # --------------------------------------------------
+      - name: Build and Push Docker image
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      # --------------------------------------------------
+      # 5. Deploy to EC2 via SSM
+      # --------------------------------------------------
+      - name: Deploy to EC2 using SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "SplitwiseV2 Deployment" \
+            --parameters commands='[
+              "set -e",
+
+              "echo Switching to ec2-user",
+              "sudo -i -u ec2-user bash << EOF",
+
+              "echo Preparing workspace",
+              "mkdir -p ${{ secrets.EC2_WORKDIR }}",
+              "cd ${{ secrets.EC2_WORKDIR }}",
+
+              "echo Cleaning old files",
+              "rm -rf infra docker-compose.yml",
+
+              "echo Cloning repo",
+              "git clone https://github.com/${{ github.repository }} temp-repo",
+
+              "echo Copying required files only",
+              "cp -r temp-repo/infra .",
+              "cp temp-repo/docker-compose.yml .",
+
+              "rm -rf temp-repo",
+
+              "echo Copying secrets",
+              "cp ${{ secrets.EC2_SECRET_DIR }}/.env .",
+              "cp ${{ secrets.EC2_SECRET_DIR }}/script_runner.sh .",
+              "chmod +x script_runner.sh",
+              "echo Deploying with Docker Compose",
+              "./script_runner.sh",
+              "echo Deployment completed successfully",
+              "EOF"
+            ]'
+
+      # --------------------------------------------------
+      # 6. Show deployment URL
+      # --------------------------------------------------
+      - name: Deployment successful
+        run: |
+          echo "=========================================="
+          echo "🚀 SplitwiseV2 Deployed Successfully!"
+          echo "🌐 URL: http://$(aws ec2 describe-instances \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --query 'Reservations[0].Instances[0].PublicDnsName' \
+            --output text)"
+          echo "📊 Grafana: http://<EC2-PUBLIC-DNS>/grafana"
+          echo "📈 Prometheus: http://<EC2-PUBLIC-DNS>/prometheus"
+          echo "=========================================="

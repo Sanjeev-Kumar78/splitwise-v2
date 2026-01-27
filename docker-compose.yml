@@ -1,16 +1,96 @@
 services:
-  db:
-    image: postgres:17
+  backend:
+    container_name: splitwise-backend
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-2.amazonaws.com/splitwisev2:latest
     env_file:
       - .env
     environment:
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    ports:
-      - "5432:5432"
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    expose:
+      - "8080"
+    networks:
+      - splitwise-net
+    restart: unless-stopped
+
+  # db:
+  #   image: postgres:17
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     POSTGRES_USER: ${DB_USERNAME}
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD}
+  #     POSTGRES_DB: ${DB_NAME}
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - db-data:/var/lib/postgresql/data
+  #   networks:
+  #     - splitwise-net
+
+  prometheus:
+    image: prom/prometheus:latest
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.external-url=/prometheus"
+      - "--web.route-prefix=/prometheus"
+    expose:
+      - "9090"
+    depends_on:
+      - backend
+    networks:
+      - splitwise-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+    expose:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_SECURITY_HIDE_VERSION=true
+      # - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    depends_on:
+      - prometheus
+    networks:
+      - splitwise-net
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN:-:80}
+    depends_on:
+      - backend
+      - grafana
+      - prometheus
+    networks:
+      - splitwise-net
+    restart: unless-stopped
+
+networks:
+  splitwise-net:
+    driver: bridge
 
 volumes:
-  db-data: {}
+  caddy_data: {}
+  caddy_config: {}
+  grafana_data: {}

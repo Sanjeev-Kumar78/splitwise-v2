@@ -1,0 +1,83 @@
+{$DOMAIN:localhost} {
+    # Custom SSL Certificate (comment out for Let's Encrypt auto)
+    tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Grafana (served from /grafana)
+    @grafana path /grafana*
+    handle @grafana {
+        reverse_proxy grafana:3000 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+
+    # Prometheus (served from /prometheus)
+    @prometheus path /prometheus*
+    handle @prometheus {
+        reverse_proxy prometheus:9090 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+
+    # Swagger UI Documentation
+    handle /swagger-ui/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle /swagger-ui.html {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    handle /v3/api-docs* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    # API Routes
+    handle /api/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Actuator endpoints
+    handle /actuator/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    # Domain verification for SSL/CNAME
+    handle /.well-known/* {
+        root * /var/www/verification
+        file_server
+    }
+
+    # Root - simple status (specific path match)
+    handle_path / {
+        respond "Splitwise v2 API Running ✓ | Docs: /swagger-ui/index.html | Monitor: /grafana/ | Metrics: /prometheus/" 200
+    }
+
+    # Catch-all 404
+    handle {
+        respond "404 - Available: /api/* | /swagger-ui/* | /grafana/ | /prometheus/ | /actuator/*" 404
+    }
+}

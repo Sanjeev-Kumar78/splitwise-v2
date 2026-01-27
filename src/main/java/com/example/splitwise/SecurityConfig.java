@@ -48,7 +48,9 @@ public class SecurityConfig {
                 // Authorize requests using lambda style
                 .authorizeHttpRequests(auth -> auth
                 // public endpoints
-                .requestMatchers("/api/auth/**", "/api/users/ping", "/h2-console/**", "/actuator/**").permitAll()
+                .requestMatchers("/api/auth/**", "/api/users/ping", "/h2-console/**").permitAll()
+                // Actuator endpoints - allow all for monitoring
+                .requestMatchers("/actuator/**").permitAll()
                 // Swagger UI and OpenAPI docs
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
