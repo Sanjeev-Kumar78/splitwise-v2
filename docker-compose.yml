@@ -49,8 +49,8 @@ services:
     image: grafana/grafana:latest
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
-      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infra/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
     expose:
       - "3000"
@@ -58,14 +58,14 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
       - GF_SECURITY_HIDE_VERSION=true
-      # - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
-      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     depends_on:
       - prometheus
     networks:
       - splitwise-net
     restart: unless-stopped
+
   caddy:
     image: caddy:2.10-alpine
     ports:

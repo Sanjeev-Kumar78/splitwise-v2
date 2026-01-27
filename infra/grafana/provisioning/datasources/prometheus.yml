@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/grafana/grafana/refs/heads/main/devenv/datasources.yaml
+apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
     # Use internal service base URL (no external route prefix) so Grafana can reach Prometheus directly
-    url: http://prometheus:9090/
+    url: http://prometheus:9090/prometheus
     isDefault: true
     editable: false
     jsonData:
