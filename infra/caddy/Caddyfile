@@ -1,4 +1,4 @@
-{$DOMAIN:localhost} {
+:80, :443 {
     # Custom SSL Certificate (comment out for Let's Encrypt auto)
     tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 
