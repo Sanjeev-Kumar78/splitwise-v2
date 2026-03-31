@@ -56,7 +56,7 @@ FRONTEND_URL=http://localhost:3000
 
 # Grafana Configuration
 GRAFANA_USERNAME=admin
-GRAFANA_PASSWORD=admin
+GRAFANA_PASSWORD=splitwisev2_grafana
 GRAFANA_ROOT_URL=http://localhost/grafana/
 
 # Domain (for Caddy reverse proxy)
@@ -315,6 +315,7 @@ fetch("/api/events", {
 - **HTTPS:** Automatic via Caddy reverse proxy in production
 
 ## 📝 License
+
 .
 This project is licensed under the MIT License.
 
