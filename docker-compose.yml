@@ -1,4 +1,20 @@
 services:
+  # ========== LOCAL DATABASE - COMMENT OUT WHEN SWITCHING TO RDS ==========
+  db:
+    image: postgres:17
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - splitwise-net
+  # =========================================================================
   backend:
     container_name: splitwise-backend
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-2.amazonaws.com/splitwisev2:latest
@@ -10,24 +26,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
     expose:
       - "8080"
+    # For RDS cost savings, we can point the backend to the RDS instance instead of the local db container. In that case, we can remove the db service and its dependencies.
+    depends_on:
+      - db
     networks:
       - splitwise-net
     restart: unless-stopped
-
-  # db:
-  #   image: postgres:17
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     POSTGRES_USER: ${DB_USERNAME}
-  #     POSTGRES_PASSWORD: ${DB_PASSWORD}
-  #     POSTGRES_DB: ${DB_NAME}
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - db-data:/var/lib/postgresql/data
-  #   networks:
-  #     - splitwise-net
 
   prometheus:
     image: prom/prometheus:latest
@@ -91,6 +95,9 @@ networks:
     driver: bridge
 
 volumes:
+  # ========== LOCAL DATABASE VOLUME - REMOVE WHEN SWITCHING TO RDS ==========
+  db-data: {}
+  # =========================================================================
   caddy_data: {}
   caddy_config: {}
   grafana_data: {}
