@@ -14,6 +14,15 @@ services:
       - db-data:/var/lib/postgresql/data
     networks:
       - splitwise-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
   # =========================================================================
   backend:
     container_name: splitwise-backend
@@ -24,14 +33,20 @@ services:
       DB_URL: ${DB_URL}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m -XX:+UseContainerSupport"
     expose:
       - "8080"
     # For RDS cost savings, we can point the backend to the RDS instance instead of the local db container. In that case, we can remove the db service and its dependencies.
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - splitwise-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
 
   prometheus:
     image: prom/prometheus:latest
@@ -48,6 +63,10 @@ services:
     networks:
       - splitwise-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   grafana:
     image: grafana/grafana:latest
@@ -69,6 +88,10 @@ services:
     networks:
       - splitwise-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   caddy:
     image: caddy:2.10-alpine

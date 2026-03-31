@@ -18,4 +18,5 @@ COPY --from=build /build/target/*.jar app.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+# JAVA_TOOL_OPTIONS is read natively by the JVM - set heap limits via compose env
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_TOOL_OPTIONS -jar /app/app.jar"]

@@ -1,4 +1,65 @@
-:80, :443 {
+# HTTP on port 80 - serves all routes directly (no redirect)
+# EC2 public DNS uses self-signed cert which clients reject, so keep HTTP working
+:80 {
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    encode gzip zstd
+
+    @grafana path /grafana*
+    handle @grafana {
+        reverse_proxy grafana:3000 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    @prometheus path /prometheus*
+    handle @prometheus {
+        reverse_proxy prometheus:9090 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle /swagger-ui/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle /swagger-ui.html {
+        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+    }
+
+    handle /v3/api-docs* {
+        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+    }
+
+    handle /api/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle /actuator/* {
+        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+    }
+
+    handle_path / {
+        respond "Splitwise v2 API Running ✓ | Docs: /swagger-ui/index.html | Monitor: /grafana/ | Metrics: /prometheus/" 200
+    }
+
+    handle {
+        respond "404 - Available: /api/* | /swagger-ui/* | /grafana/ | /prometheus/ | /actuator/*" 404
+    }
+}
+
+# HTTPS on port 443 - main server
+:443 {
     # Custom SSL Certificate (comment out for Let's Encrypt auto)
     tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 
