@@ -315,7 +315,7 @@ fetch("/api/events", {
 - **HTTPS:** Automatic via Caddy reverse proxy in production
 
 ## 📝 License
-
+.
 This project is licensed under the MIT License.
 
 ## 👤 Authors
