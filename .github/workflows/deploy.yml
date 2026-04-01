@@ -17,9 +17,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
-    outputs:
-      public-dns: ${{ steps.deploy.outputs.public_dns }}
-
     steps:
       # --------------------------------------------------
       # 1. Checkout source
@@ -31,14 +28,13 @@ jobs:
       # 2. Configure AWS credentials (OIDC)
       # --------------------------------------------------
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@main
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Additional steps
-        run: |
-          # Your commands that require AWS credentials
-          aws sts get-caller-identity
+
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
 
       # --------------------------------------------------
       # 3. Login to Amazon ECR
@@ -59,7 +55,7 @@ jobs:
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       # --------------------------------------------------
-      # 5. Deploy to EC2 via SSM
+      # 5. Start EC2 if stopped (for wake-on-request setup)
       # --------------------------------------------------
       - name: Start EC2 if stopped
         run: |
@@ -72,35 +68,56 @@ jobs:
             echo "Starting EC2 instance..."
             aws ec2 start-instances --instance-ids "${{ secrets.EC2_INSTANCE_ID }}"
             aws ec2 wait instance-running --instance-ids "${{ secrets.EC2_INSTANCE_ID }}"
+            # Extra wait for SSM agent to come online
+            sleep 30
             echo "EC2 is running"
           fi
 
+      # --------------------------------------------------
+      # 6. Deploy to EC2 via SSM
+      # SSM runs as root. We:
+      #   Phase 1 (root)     - delete root-owned infra/ and fix ownership
+      #   Phase 2 (ec2-user) - git clone, copy secrets, run deploy script
+      # --------------------------------------------------
       - name: Deploy to EC2 using SSM
         id: deploy
         run: |
-          # Write the deploy commands as a temp script on EC2.
-          # This avoids shell quoting issues with && inside SSM JSON arrays,
-          # and lets us run as ec2-user (who is in the docker group).
+          WORKDIR="${{ secrets.EC2_WORKDIR }}"
+          SECRET_DIR="${{ secrets.EC2_SECRET_DIR }}"
+          REPO="${{ github.repository }}"
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "SplitwiseV2 Deployment" \
-            --parameters 'commands=[
-              "set -e",
-              "WORKDIR=\"${{ secrets.EC2_WORKDIR }}\"",
-              "SECRET_DIR=\"${{ secrets.EC2_SECRET_DIR }}\"",
-              "REPO=\"${{ github.repository }}\"",
-              "printf \"#!/bin/bash\\nset -e\\ncd %s\\nrm -rf infra docker-compose.yml temp-repo\\ngit clone --depth=1 https://github.com/%s temp-repo\\ncp -r temp-repo/infra . && cp temp-repo/docker-compose.yml . && rm -rf temp-repo\\ncp %s/.env .\\ncp %s/script_runner.sh . && chmod +x script_runner.sh\\n./script_runner.sh\\necho Done\\n\" \"$WORKDIR\" \"$REPO\" \"$SECRET_DIR\" \"$SECRET_DIR\" > /tmp/sw_deploy.sh",
-              "chmod +x /tmp/sw_deploy.sh",
-              "su - ec2-user -c \"bash /tmp/sw_deploy.sh\"",
-              "rm -f /tmp/sw_deploy.sh"
-            ]' \
+            --parameters commands="[
+              \"set -e\",
+              \"echo '=== Phase 1: root cleanup ==='\",
+              \"rm -rf ${WORKDIR}/infra ${WORKDIR}/docker-compose.yml ${WORKDIR}/temp-repo\",
+              \"chown -R ec2-user:ec2-user ${WORKDIR}\",
+              \"echo '=== Phase 2: write deploy script ==='\",
+              \"cat > /tmp/sw_deploy.sh <<'EOF'\",
+              \"#!/bin/bash\",
+              \"set -e\",
+              \"cd ${WORKDIR}\",
+              \"git clone --depth=1 https://github.com/${REPO} temp-repo\",
+              \"cp -r temp-repo/infra . && cp temp-repo/docker-compose.yml . && rm -rf temp-repo\",
+              \"cp ${SECRET_DIR}/.env .\",
+              \"cp ${SECRET_DIR}/script_runner.sh . && chmod +x script_runner.sh\",
+              \"./script_runner.sh\",
+              \"echo DEPLOY_DONE\",
+              \"EOF\",
+              \"chmod +x /tmp/sw_deploy.sh\",
+              \"echo '=== Phase 3: run as ec2-user ==='\",
+              \"su - ec2-user -c 'bash /tmp/sw_deploy.sh'\",
+              \"rm -f /tmp/sw_deploy.sh\"
+            ]" \
             --query 'Command.CommandId' \
             --output text)
 
           echo "SSM Command ID: $COMMAND_ID"
 
-          # Wait - use || so we always print logs even on failure
+          # Wait - always print logs even on failure
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}" || DEPLOY_FAILED=1
@@ -119,7 +136,6 @@ jobs:
             --query 'StandardErrorContent' \
             --output text
 
-          # Now actually fail the step if deploy failed
           [ -z "$DEPLOY_FAILED" ] || exit 1
 
   update-repo-url:
