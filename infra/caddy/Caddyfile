@@ -31,11 +31,15 @@
     }
 
     handle /swagger-ui.html {
-        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
     }
 
     handle /v3/api-docs* {
-        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
     }
 
     handle /api/* {
@@ -46,7 +50,9 @@
     }
 
     handle /actuator/* {
-        reverse_proxy backend:8080 { header_up Host {upstream_hostport} }
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+        }
     }
 
     handle_path / {
