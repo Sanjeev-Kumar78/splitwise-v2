@@ -130,10 +130,11 @@ The application uses GitHub Actions for continuous deployment to AWS:
 ### AWS Infrastructure
 
 - **Compute:** EC2 instance (t4g.micro recommended)
-- **Database:** RDS PostgreSQL 17
+- **Database:** Docker PostgreSQL 17 on EC2 *(or RDS PostgreSQL 17 — see [Cost-Optimized Deployment](#-cost-optimized-deployment-current))*
 - **Container Registry:** Amazon ECR
 - **Secrets Management:** AWS Systems Manager (SSM)
 - **Authentication:** OIDC (GitHub → AWS)
+- **EC2 Lifecycle:** AWS Lambda + API Gateway (on-demand start/stop)
 
 ### Required GitHub Secrets
 
@@ -191,6 +192,95 @@ docker compose up -d
 # View logs
 docker compose logs -f
 ```
+
+## 💰 Cost-Optimized Deployment (Current)
+
+> [!NOTE]
+> This is the **current active setup** to minimize AWS costs during development/low-traffic periods. The architecture can be switched back to RDS at any time — see [Switching to RDS](#switching-to-rds) below.
+
+### Why This Setup?
+
+| Component | Standard Setup | Cost-Optimized Setup | Savings |
+|-----------|---------------|----------------------|---------|
+| Database | RDS PostgreSQL | Docker PostgreSQL on EC2 | ~$15+/month |
+| EC2 Runtime | Always running | On-demand via Lambda | Pay only when active |
+| Trigger | Manual / always-on | API Gateway + Lambda | Automated start/stop |
+
+### Architecture Overview
+
+```
+API Gateway → Lambda (Start/Stop EC2) → EC2 (Docker Compose)
+                                          ├── Backend (Spring Boot)
+                                          ├── PostgreSQL 17 (Docker)
+                                          ├── Prometheus
+                                          ├── Grafana
+                                          └── Caddy (Reverse Proxy)
+```
+
+### Docker PostgreSQL (Instead of RDS)
+
+The `docker-compose.yml` includes a local PostgreSQL 17 container with:
+
+- **Persistent volume** (`db-data`) to retain data across container restarts
+- **Health checks** ensuring the database is ready before the backend starts
+- **Memory limit** of 256MB to stay within EC2 instance constraints
+
+```bash
+# The DB_URL in .env points to the Docker container
+DB_URL=jdbc:postgresql://db:5432/Splitwisev2
+```
+
+> [!IMPORTANT]
+> The Docker PostgreSQL data lives on the EC2 instance's EBS volume. Ensure you have EBS snapshots or a backup strategy in place if data durability is critical.
+
+### Lambda for EC2 Lifecycle Management
+
+**Function:** `splitwise-wake-proxy`
+
+An AWS Lambda function handles starting and stopping the EC2 instance on-demand, so the instance only runs when needed:
+
+- **Start:** Boots the EC2 instance → Docker Compose services auto-start via `restart: unless-stopped`
+- **Stop:** Gracefully stops the EC2 instance to halt billing
+
+**Required Lambda Configuration:**
+
+- **IAM Role Permissions:**
+  - `ec2:StartInstances`
+  - `ec2:StopInstances`
+  - `ec2:DescribeInstances`
+- **Environment Variable:** `EC2_INSTANCE_ID` — the target instance ID
+
+### API Gateway for Lambda Triggers
+
+**API Name:** `splitwise-wake-api`
+**Endpoint:** `https://phk6xsrxnd.execute-api.us-east-2.amazonaws.com`
+**Integration Type:** `AWS_PROXY`
+
+The API Gateway uses a **proxy integration** pattern — all requests are forwarded to the Lambda function, which handles routing internally:
+
+```
+ANY /            → splitwise-wake-proxy (Lambda)
+ANY /{proxy+}    → splitwise-wake-proxy (Lambda)
+```
+
+**Usage:**
+
+```bash
+# Check EC2 instance status
+curl https://phk6xsrxnd.execute-api.us-east-2.amazonaws.com/status
+```
+
+### Switching to RDS
+
+To switch back to RDS when needed:
+
+1. **`docker-compose.yml`:** Comment out the `db` service and `db-data` volume (marked with `========== LOCAL DATABASE ==========` comments)
+2. **`.env`:** Update `DB_URL` to point to your RDS endpoint:
+   ```bash
+   DB_URL=jdbc:postgresql://<rds-endpoint>:5432/Splitwisev2
+   ```
+3. **`backend` service:** Remove the `depends_on: db` block
+4. Redeploy with `docker compose up -d`
 
 ## 📊 Monitoring
 
