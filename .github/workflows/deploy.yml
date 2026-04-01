@@ -78,37 +78,49 @@ jobs:
       - name: Deploy to EC2 using SSM
         id: deploy
         run: |
+          # Write the deploy commands as a temp script on EC2.
+          # This avoids shell quoting issues with && inside SSM JSON arrays,
+          # and lets us run as ec2-user (who is in the docker group).
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "SplitwiseV2 Deployment" \
             --parameters 'commands=[
               "set -e",
-              "cd ${{ secrets.EC2_WORKDIR }}",
-              "rm -rf infra docker-compose.yml temp-repo",
-              "git clone --depth=1 https://github.com/${{ github.repository }} temp-repo",
-              "cp -r temp-repo/infra . && cp temp-repo/docker-compose.yml . && rm -rf temp-repo",
-              "cp ${{ secrets.EC2_SECRET_DIR }}/.env .",
-              "cp ${{ secrets.EC2_SECRET_DIR }}/script_runner.sh . && chmod +x script_runner.sh",
-              "./script_runner.sh",
-              "echo Deployment completed successfully"
+              "WORKDIR=\"${{ secrets.EC2_WORKDIR }}\"",
+              "SECRET_DIR=\"${{ secrets.EC2_SECRET_DIR }}\"",
+              "REPO=\"${{ github.repository }}\"",
+              "printf \"#!/bin/bash\\nset -e\\ncd %s\\nrm -rf infra docker-compose.yml temp-repo\\ngit clone --depth=1 https://github.com/%s temp-repo\\ncp -r temp-repo/infra . && cp temp-repo/docker-compose.yml . && rm -rf temp-repo\\ncp %s/.env .\\ncp %s/script_runner.sh . && chmod +x script_runner.sh\\n./script_runner.sh\\necho Done\\n\" \"$WORKDIR\" \"$REPO\" \"$SECRET_DIR\" \"$SECRET_DIR\" > /tmp/sw_deploy.sh",
+              "chmod +x /tmp/sw_deploy.sh",
+              "su - ec2-user -c \"bash /tmp/sw_deploy.sh\"",
+              "rm -f /tmp/sw_deploy.sh"
             ]' \
             --query 'Command.CommandId' \
             --output text)
 
           echo "SSM Command ID: $COMMAND_ID"
 
-          # Wait for the SSM command to finish (polls every 15s, up to 10 min)
+          # Wait - use || so we always print logs even on failure
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" || DEPLOY_FAILED=1
 
-          # Print SSM output for logs
+          echo "========== SSM STDOUT =========="
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-            --query '[StandardOutputContent,StandardErrorContent]' \
+            --query 'StandardOutputContent' \
             --output text
+
+          echo "========== SSM STDERR =========="
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query 'StandardErrorContent' \
+            --output text
+
+          # Now actually fail the step if deploy failed
+          [ -z "$DEPLOY_FAILED" ] || exit 1
 
   update-repo-url:
     runs-on: ubuntu-latest
