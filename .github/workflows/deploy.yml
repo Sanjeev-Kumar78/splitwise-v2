@@ -103,26 +103,3 @@ jobs:
             --output text
 
           [ -z "$DEPLOY_FAILED" ] || exit 1
-
-  update-repo-url:
-    runs-on: ubuntu-latest
-    needs: build-and-deploy
-    permissions:
-      contents: write
-
-    steps:
-      - name: Update repository homepage URL
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          # Use the stable API Gateway URL (not the dynamic EC2 DNS)
-          APP_URL="${{ secrets.API_GATEWAY_URL }}"
-
-          echo "Updating repository homepage to: $APP_URL"
-          gh repo edit ${{ github.repository }} --homepage "$APP_URL"
-
-          echo "🚀 SplitwiseV2 Deployed Successfully!"
-          echo "API Gateway (wake-on-request): $APP_URL"
-          echo "Grafana:    $APP_URL/grafana"
-          echo "Prometheus: $APP_URL/prometheus"
-          echo "Swagger:    $APP_URL/swagger-ui/index.html"
