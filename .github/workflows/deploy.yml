@@ -67,7 +67,7 @@ jobs:
             --comment "SplitwiseV2 Deployment" \
             --parameters commands="[
               \"set -e\",
-              \"rm -rf ${WORKDIR}/infra ${WORKDIR}/docker-compose.yml ${WORKDIR}/temp-repo\",
+              \"rm -rf ${WORKDIR}/infra ${WORKDIR}/docker-compose.yml ${WORKDIR}/temp-repo ${WORKDIR}/.env\",
               \"chown -R ec2-user:ec2-user ${WORKDIR}\",
               \"cat > /tmp/sw_deploy.sh <<'EOF'\",
               \"#!/bin/bash\",
